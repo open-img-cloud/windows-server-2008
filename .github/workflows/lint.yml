@@ -1,0 +1,92 @@
+# Static checks only, on every pull request and push to main. The build
+# itself is the manual workflow build.yml; openimages.cloud does not
+# redistribute Windows images (see README).
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    env:
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789  # v3.4.0
+        with:
+          version: "1.16.2"
+
+      - name: Install xmllint
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils
+
+      - name: packer fmt
+        working-directory: packer
+        run: packer fmt -check -diff .
+
+      - name: packer init
+        working-directory: packer
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ github.token }}
+        run: packer init .
+
+      - name: packer validate (every edition)
+        working-directory: packer
+        run: |
+          for edition in standard enterprise datacenter standard-core enterprise-core datacenter-core; do
+            echo "== $edition"
+            packer validate -var iso_path=/dev/null -var setup_dir=/tmp -var build_password=ci-only \
+              -var edition="$edition" .
+          done
+
+      - name: Render and check autounattend.xml
+        working-directory: packer
+        run: |
+          echo 'local.autounattend' | packer console \
+            -var iso_path=/dev/null -var setup_dir=/tmp -var 'build_password=ci&<only>' . \
+            > /tmp/autounattend.xml
+          xmllint --noout /tmp/autounattend.xml
+
+      - name: xmllint
+        run: xmllint --noout setup/oic/*.xml
+
+      - name: Cloudbase-Init configuration syntax
+        run: |
+          python3 - <<'EOF'
+          import configparser, glob, sys
+          ok = True
+          for path in sorted(glob.glob("setup/oic/*.conf")):
+              parser = configparser.ConfigParser(interpolation=None, strict=True)
+              try:
+                  parser.read(path, encoding="utf-8")
+                  print(f"ok {path}")
+              except configparser.Error as exc:
+                  ok = False
+                  print(f"FAIL {path}: {exc}")
+          sys.exit(0 if ok else 1)
+          EOF
+
+      - name: Shell and Python scripts
+        run: |
+          bash -n scripts/*.sh
+          shellcheck scripts/*.sh
+          python3 -m py_compile scripts/ci/*.py
+
+      - name: Pinned files
+        run: |
+          # "<sha256>  <vault key>" on every line.
+          grep -vEq '^[0-9a-f]{64}  [a-z0-9.-]+/[^ ]+$' iso.sha256 deps.sha256 && exit 1 || true
+
+      - name: No em dash
+        run: |
+          if grep -rn --exclude-dir=.git $'\xe2\x80\x94' .; then
+            echo "Em dashes are not allowed in this organization's repositories." >&2
+            exit 1
+          fi

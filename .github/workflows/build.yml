@@ -1,0 +1,140 @@
+# Build of the Windows Server 2008 SP2 image on a GitHub-hosted runner (KVM):
+# fetches the DVD and the packages pinned in iso.sha256 and deps.sha256 from
+# the project's private ISO vault, builds with scripts/build.sh, checks the
+# in-guest log, boots the image once with scripts/smoke.sh, and stores it
+# back in the PRIVATE vault (images/).
+#
+# Nothing is published, and the image is never a workflow artifact (anyone
+# signed in to GitHub can download the artifacts of a public repository):
+# Windows evaluation media must not be redistributed (see README).
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: Edition
+        type: choice
+        options: [standard, datacenter, enterprise]
+        default: standard
+      store_image:
+        description: Store the image in the private ISO vault (images/)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ inputs.edition }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    env:
+      CHECKPOINT_DISABLE: "1"
+      EDITION: ${{ inputs.edition }}
+      NAME: windows-server-2008-${{ inputs.edition }}-bios
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          [ -w /dev/kvm ] || sudo chmod 666 /dev/kvm
+          test -w /dev/kvm
+
+      - name: Install QEMU and xorriso
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils xorriso
+
+      - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789  # v3.4.0
+        with:
+          version: "1.16.2"
+
+      - name: Work directory on the larger disk
+        run: |
+          df -h / /mnt
+          sudo install -d -o "$USER" /mnt/work
+          echo "WORK=/mnt/work" >> "$GITHUB_ENV"
+
+      - name: Fetch the DVD and the packages from the vault
+        # Read-only key; every file must match its pinned sha256.
+        env:
+          OIC_ISO_VAULT_KEY_ID: ${{ secrets.OIC_ISO_VAULT_KEY_ID }}
+          OIC_ISO_VAULT_SECRET: ${{ secrets.OIC_ISO_VAULT_SECRET }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/vault"
+          "$RUNNER_TEMP/vault/bin/pip" install --quiet boto3
+          "$RUNNER_TEMP/vault/bin/python" scripts/ci/fetch-vault.py iso.sha256 "$WORK/iso"
+          "$RUNNER_TEMP/vault/bin/python" scripts/ci/fetch-vault.py deps.sha256 "$WORK/deps"
+
+      - name: Build
+        # SP2 and the January 2020 rollup make this long (no network needed:
+        # every package is on the setup CD).
+        timeout-minutes: 300
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$WORK/screens"
+          python3 -I scripts/ci/screenshots.py "$WORK/qmp.sock" "$WORK/screens" 300 &
+          scripts/build.sh --iso "$WORK"/iso/*.iso --deps "$WORK/deps" --edition "$EDITION" -- \
+            -var "output_dir=$WORK/output" -var "qmp_socket=$WORK/qmp.sock" \
+            -var "serial_log=$WORK/serial.log"
+          ls -l "$WORK/output/$NAME"
+
+      - name: In-guest setup log
+        if: always()
+        run: |
+          [ -f "$WORK/serial.log" ] || { echo "no serial log"; exit 1; }
+          tr -d '\r' < "$WORK/serial.log" | grep 'oic-setup' || true
+          if grep -q 'OIC-SETUP-FAILED' "$WORK/serial.log"; then exit 1; fi
+          grep -q 'OIC-SETUP-DONE' "$WORK/serial.log"
+
+      - name: Boot test
+        run: scripts/smoke.sh "$WORK/output/$NAME/$NAME.qcow2" 40
+
+      - name: Store the image in the private vault
+        if: inputs.store_image
+        env:
+          OIC_ISO_VAULT_KEY_ID: ${{ secrets.OIC_ISO_VAULT_KEY_ID }}
+          OIC_ISO_VAULT_SECRET: ${{ secrets.OIC_ISO_VAULT_SECRET }}
+        run: |
+          "$RUNNER_TEMP/vault/bin/python" scripts/ci/store-image.py \
+            "$WORK/output/$NAME/$NAME.qcow2" "windows-server-2008/$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### $NAME"
+            echo
+            echo "Edition $EDITION, BIOS, SP2 + January 2020 rollup."
+            if [ -f "$WORK/output/$NAME/$NAME.qcow2.sha256" ]; then
+              echo
+              echo '```'
+              cat "$WORK/output/$NAME/$NAME.qcow2.sha256"
+              echo '```'
+            fi
+            echo
+            echo "Not published: the image only goes to the private ISO vault."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Console screenshots and the in-guest log, to see where a failed
+      # build stopped. No image here, only pictures of the console.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: failure() || cancelled()
+        with:
+          name: ${{ env.NAME }}-screens
+          path: |
+            ${{ env.WORK }}/screens/
+            ${{ env.WORK }}/serial.log
+          retention-days: 7
+          if-no-files-found: ignore
