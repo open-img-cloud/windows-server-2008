@@ -11,6 +11,7 @@ set SRC=
 for %%d in (D E F G H) do if exist %%d:\oic\setup.cmd set SRC=%%d:
 set /p STAGE=<C:\oic\stage.txt
 call :log "boot, stage %STAGE%, setup CD %SRC%"
+for /f "tokens=3*" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CSDVersion 2^>nul ^| find "CSDVersion"') do call :log "service pack: %%a %%b"
 if "%SRC%"=="" call :fail "OIC_SETUP CD not found" & goto :eof
 rem Let the services (Windows Modules Installer, ...) settle after boot.
 ping -n 31 127.0.0.1 >nul
@@ -24,11 +25,13 @@ certutil -addstore -f TrustedPublisher C:\oic\redhat.cer >nul
 call :check %errorlevel% "Red Hat certificate" || goto :eof
 for %%v in (NetKVM\netkvm Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic vioscsi\vioscsi) do (
   pnputil -i -a "%SRC%\drivers\%%v.inf" >>C:\oic\pnputil.log 2>&1
-  call :log "pnputil %%v: %%errorlevel%%"
+  call :log "pnputil %%v"
 )
 call :log "Windows Server 2008 SP2 (KB948465), the longest step"
 "%SRC%\updates\sp2.exe" /quiet /norestart
-call :check %errorlevel% "SP2" || goto :eof
+set RC=%errorlevel%
+call :log "SP2: exit code %RC%"
+call :check %RC% "SP2" || goto :eof
 call :next 2
 goto :eof
 
@@ -60,12 +63,16 @@ goto :eof
 :stage7
 call :log "QEMU guest agent"
 msiexec /i "%SRC%\msi\qemu-ga-x86_64.msi" /qn /norestart /l*v C:\oic\qemu-ga.log
-call :check %errorlevel% "QEMU guest agent" || goto :eof
+set RC=%errorlevel%
+if not "%RC%"=="0" if not "%RC%"=="3010" call :msilog C:\oic\qemu-ga.log
+call :check %RC% "QEMU guest agent" || goto :eof
 sc config QEMU-GA start= auto >nul
 
 call :log "Cloudbase-Init 0.9.11"
 msiexec /i "%SRC%\msi\CloudbaseInitSetup_0_9_11_x64.msi" /qn /norestart /l*v C:\oic\cloudbase-init.log RUN_SERVICE_AS_LOCAL_SYSTEM=1
-call :check %errorlevel% "Cloudbase-Init" || goto :eof
+set RC=%errorlevel%
+if not "%RC%"=="0" if not "%RC%"=="3010" call :msilog C:\oic\cloudbase-init.log
+call :check %RC% "Cloudbase-Init" || goto :eof
 set CBI=%ProgramFiles%\Cloudbase Solutions\Cloudbase-Init
 copy /y C:\oic\cloudbase-init.conf "%CBI%\conf\cloudbase-init.conf" >nul
 copy /y C:\oic\cloudbase-init-unattend.conf "%CBI%\conf\cloudbase-init-unattend.conf" >nul
@@ -109,7 +116,9 @@ rem ---------------------------------------------------------------------
 rem %1 file name in updates\ (without .msu), %2 description
 call :log "%~2"
 wusa.exe "%SRC%\updates\%~1.msu" /quiet /norestart
-call :check %errorlevel% "%~2"
+set RC=%errorlevel%
+call :log "%~1: wusa exit code %RC%"
+call :check %RC% "%~2"
 exit /b %errorlevel%
 
 :check
@@ -119,6 +128,12 @@ if "%~1"=="3010" exit /b 0
 if "%~1"=="2359302" call :log "%~2 already installed" & exit /b 0
 call :fail "%~2 failed with exit code %~1"
 exit /b 1
+
+:msilog
+rem Error lines of a Windows Installer log (UTF-16: type converts it), raw
+rem to COM1 so that the CI log shows why the package failed.
+type "%~1" | findstr /i /c:"return value 3" /c:"error 1" /c:"error 2" /c:"CustomAction" > COM1
+exit /b 0
 
 :next
 (echo %~1)> C:\oic\stage.txt
