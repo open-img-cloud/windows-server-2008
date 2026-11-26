@@ -21,14 +21,14 @@
       <UILanguage>${ui_language}</UILanguage>
       <UserLocale>${ui_language}</UserLocale>
     </component>
-    <!-- VirtIO storage driver (the build disk is virtio-blk) from the
-         OIC_SETUP CD; the CD letter depends on the VM, missing paths are
-         skipped. -->
+    <!-- VirtIO storage driver (the build disk is virtio-blk) from the build
+         floppy, always A:. Windows Server 2008 Setup stops with "could not
+         install one or more boot-critical drivers" when a listed path does
+         not exist, so only paths that are always there are listed. The
+         driver is carried over into the installed system. -->
     <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <DriverPaths>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>D:\drivers\viostor</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>E:\drivers\viostor</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="3"><Path>F:\drivers\viostor</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>A:\</Path></PathAndCredentials>
       </DriverPaths>
     </component>
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -80,17 +80,6 @@
           <WillShowUI>Never</WillShowUI>
         </ProductKey>
       </UserData>
-    </component>
-  </settings>
-  <!-- Every VirtIO driver, staged into the installed system: devices get
-       their driver at first boot without any prompt. -->
-  <settings pass="offlineServicing">
-    <component name="Microsoft-Windows-PnpCustomizationsNonWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <DriverPaths>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>D:\drivers</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>E:\drivers</Path></PathAndCredentials>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="3"><Path>F:\drivers</Path></PathAndCredentials>
-      </DriverPaths>
     </component>
   </settings>
   <settings pass="specialize">

@@ -17,6 +17,15 @@ ping -n 31 127.0.0.1 >nul
 goto stage%STAGE%
 
 :stage1
+rem VirtIO drivers other than storage (network, balloon, serial, RNG,
+rem pvpanic): the publisher is trusted first so that no prompt appears.
+call :log "VirtIO drivers"
+certutil -addstore -f TrustedPublisher C:\oic\redhat.cer >nul
+call :check %errorlevel% "Red Hat certificate" || goto :eof
+for %%v in (NetKVM\netkvm Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic vioscsi\vioscsi) do (
+  pnputil -i -a "%SRC%\drivers\%%v.inf" >>C:\oic\pnputil.log 2>&1
+  call :log "pnputil %%v: %%errorlevel%%"
+)
 call :log "Windows Server 2008 SP2 (KB948465), the longest step"
 "%SRC%\updates\sp2.exe" /quiet /norestart
 call :check %errorlevel% "SP2" || goto :eof

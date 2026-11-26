@@ -94,6 +94,10 @@ source "qemu" "windows" {
     "autounattend.xml" = local.autounattend
   }
 
+  # Floppy with the VirtIO storage driver for Windows Setup: A: is the only
+  # drive letter known in advance (see autounattend.xml.pkrtpl).
+  floppy_dirs = ["${abspath(var.setup_dir)}/drivers/viostor"]
+
   boot_wait = "5s"
   qemuargs  = concat(local.serial_args, local.qmp_args)
 
