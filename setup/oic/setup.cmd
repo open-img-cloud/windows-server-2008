@@ -80,6 +80,14 @@ del /q "%ProgramFiles%\Qemu-ga\qga-vss.*" >nul 2>&1
 sc create QEMU-GA binPath= "\"%ProgramFiles%\Qemu-ga\qemu-ga.exe\" -d --retry-path" start= auto DisplayName= "QEMU Guest Agent" >nul
 call :check %errorlevel% "QEMU guest agent service" || goto :eof
 sc description QEMU-GA "QEMU Guest Agent" >nul
+rem Diagnostics in the CI log: agent version, service state once started,
+rem VirtIO serial driver (the agent channel).
+"%ProgramFiles%\Qemu-ga\qemu-ga.exe" -V > COM1 2>&1
+call :log "qemu-ga -V exit code %errorlevel%"
+sc start QEMU-GA >nul 2>&1
+ping -n 11 127.0.0.1 >nul
+sc query QEMU-GA > COM1 2>&1
+driverquery | findstr /i "vioser netkvm balloon viostor" > COM1 2>&1
 
 call :log "Cloudbase-Init 0.9.11"
 msiexec /i "%SRC%\msi\CloudbaseInitSetup_0_9_11_x64.msi" /qn /norestart /l*v C:\oic\cloudbase-init.log RUN_SERVICE_AS_LOCAL_SYSTEM=1
