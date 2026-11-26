@@ -107,7 +107,7 @@ chmod -R u+w "$setup"
 # the setup task, which has no console, waits forever.
 mkdir -p "$setup/oic"
 openssl pkcs7 -inform DER -in "$setup/drivers/viostor/viostor.cat" -print_certs |
-  awk '/^subject=.*O ?= ?Red Hat/{p=1} p{print} p&&/END CERTIFICATE/{exit}' > "$setup/oic/redhat.cer"
+  awk '/^subject=.*Red Hat/{p=1} p{print} p&&/END CERTIFICATE/{exit}' > "$setup/oic/redhat.cer"
 grep -q 'BEGIN CERTIFICATE' "$setup/oic/redhat.cer" || { echo "no Red Hat certificate in viostor.cat" >&2; exit 1; }
 
 # In-guest scripts; cmd.exe wants CRLF line endings.
