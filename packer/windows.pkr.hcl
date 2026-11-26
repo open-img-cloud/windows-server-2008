@@ -36,6 +36,18 @@ locals {
   }
   image_index = var.image_index > 0 ? var.image_index : local.edition_index[var.edition]
 
+  # Windows Server 2008 Setup refuses an empty product key on this DVD.
+  # These are the public KMS client setup keys (GVLK) published by Microsoft
+  # (learn.microsoft.com/windows-server/get-started/kms-client-activation-keys):
+  # they install the edition unactivated, activation needs your own KMS host
+  # or your own key (slmgr /ipk). Core editions use the same keys.
+  gvlk = {
+    "standard"   = "TM24T-X9RMF-VWXK6-X8JC9-BFGM2"
+    "enterprise" = "YQGMW-MPWTJ-34KDK-48M3W-X4Q6V"
+    "datacenter" = "7M67G-PC374-GR742-YH8V4-TCBY3"
+  }
+  product_key = local.gvlk[replace(var.edition, "-core", "")]
+
   vm_name    = "windows-server-2008-${var.edition}-bios"
   output_dir = var.output_dir != "" ? var.output_dir : "${path.root}/../output"
 
@@ -44,6 +56,7 @@ locals {
 
   autounattend = templatefile("${path.root}/autounattend.xml.pkrtpl", {
     image_index    = local.image_index
+    product_key    = local.product_key
     admin_password = local.xml_password
     ui_language    = var.ui_language
     time_zone      = var.time_zone

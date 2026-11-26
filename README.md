@@ -38,10 +38,13 @@ One compressed, sysprepped `qcow2` per build:
 
 Licensing is the operator's job; the kit does not change it.
 
-- The Windows Server 2008 DVD used by the CI is the **trial** build
-  (60 days, extendable with `slmgr -rearm`). Its terms do not grant a right
-  to redistribute it ([Microsoft license terms][ms-useterms]). Do not
-  publish images built from it.
+- The Windows Server 2008 DVD used by the CI (build 6001) refuses an
+  empty product key. The kit installs the edition with its public KMS
+  client setup key (GVLK, [published by Microsoft][gvlk]): Windows is
+  installed **unactivated**, with the usual grace period. A GVLK is not a
+  licence. The DVD terms do not grant a right to redistribute it
+  ([Microsoft license terms][ms-useterms]). Do not publish images built
+  from it.
 - With your own licence: enter your product key after the first boot
   (`slmgr -ipk <key>`, then `slmgr -ato`), or point the instance to your KMS
   server.
@@ -197,6 +200,7 @@ iso.sha256, deps.sha256      pinned inputs (sha256 and path in the vault)
 GPL-2.0 for the tooling in this repository. Windows, the updates, the
 VirtIO drivers and Cloudbase-Init keep their own licenses.
 
+[gvlk]: https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys#windows-server-2008
 [ms-useterms]: https://www.microsoft.com/en-us/useterms
 [catalog]: https://www.catalog.update.microsoft.com/
 [virtio]: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/
