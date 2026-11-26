@@ -33,7 +33,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$iso" ] && [ -n "$deps" ] || { echo "--iso and --deps are required" >&2; usage >&2; exit 2; }
+if [ -z "$iso" ] || [ -z "$deps" ]; then
+  echo "--iso and --deps are required" >&2
+  usage >&2
+  exit 2
+fi
 [ -f "$iso" ] || { echo "ISO not found: $iso" >&2; exit 1; }
 [ -d "$deps" ] || { echo "deps directory not found: $deps" >&2; exit 1; }
 
