@@ -94,6 +94,8 @@ cp "$(pick 'CloudbaseInitSetup_0_9_11_x64.msi')" "$setup/msi/"
 virtio="$(pick 'virtio-win-*.iso')"
 for drv in viostor vioscsi NetKVM Balloon vioserial viorng pvpanic; do
   xorriso -osirrox on -indev "$virtio" -extract "/$drv/2k8/amd64" "$setup/drivers/$drv" 2>/dev/null
+  # xorriso keeps the read-only modes of the ISO: make the copy writable.
+  chmod -R u+w "$setup/drivers/$drv"
   rm -f "$setup/drivers/$drv"/*.pdb
 done
 xorriso -osirrox on -indev "$virtio" -extract /guest-agent/qemu-ga-x86_64.msi "$setup/msi/qemu-ga-x86_64.msi" 2>/dev/null
