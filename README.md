@@ -101,6 +101,15 @@ Linux x86_64 with KVM (`/dev/kvm` writable), `qemu-system-x86_64`,
   | `qemu-ga-x64-100.0.0.0-3.el7ev.msi` | [QEMU guest agent archive][qga] (`qemu-ga-x64.msi` of 100.0.0, renamed): later agents import Windows 7 functions (`CM_Get_DevNode_PropertyW` of cfgmgr32 from 101, `TryAcquireSRWLockExclusive` from 102) that Windows Server 2008 lacks. The MSI is not signed, the pinned sha256 is the check |
   | `CloudbaseInitSetup_0_9_11_x64.msi` | [Cloudbase-Init 0.9.11][cbi]: the last release whose embedded Python (3.4) runs on 2008 |
 
+- **Two root certificates**, in `setup/oic/`, from the Microsoft root
+  distribution (`ctldl.windowsupdate.com/.../trustedr/en/<sha1>.crt`):
+  VeriSign Class 3 Public Primary CA - G5
+  (`4eb6d578499b1ccf5f581ead56be3d9b6744a5e5`) and Thawte Timestamping CA
+  (`be36a4562fb2ee05dbb3d32323adf445084ed656`). The VirtIO drivers chain to
+  them, and a Windows Server 2008 without Internet access does not have them:
+  without them it sees the packages as unsigned (`0x800b010a`). The public
+  key of the G5 root is the one of the cross certificate in the catalogs.
+
 ## Build
 
 ```sh
@@ -197,6 +206,7 @@ setup/oic/
   setup.cmd                  in-guest build, one stage per boot
   Unattend.xml               sysprep answer file
   cloudbase-init*.conf       Cloudbase-Init 0.9.11 configuration
+  *-root.cer                 roots of the driver signatures (see below)
 scripts/
   build.sh                   Linux entry point (assembles the setup CD)
   smoke.sh                   boot test of a built image (guest agent)

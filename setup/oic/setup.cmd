@@ -21,15 +21,23 @@ goto stage%STAGE%
 rem VirtIO drivers other than storage (network, balloon, serial, RNG,
 rem pvpanic): the publisher is trusted first so that no prompt appears.
 call :log "VirtIO drivers"
+rem The drivers chain to VeriSign Class 3 Public Primary CA - G5, which a
+rem Windows Server 2008 without Internet access does not have (the root
+rem update would download it): without it the packages are seen as unsigned
+rem (0x800b010a). Same for the Thawte root of their timestamps.
+certutil -addstore -f Root C:\oic\verisign-g5-root.cer >nul
+call :check %errorlevel% "VeriSign G5 root" || goto :eof
+certutil -addstore -f Root C:\oic\thawte-timestamping-root.cer >nul
+call :check %errorlevel% "Thawte timestamping root" || goto :eof
 certutil -addstore -f TrustedPublisher C:\oic\redhat.cer >nul
 call :check %errorlevel% "Red Hat certificate" || goto :eof
-rem pnputil writes to the console only: its exit code goes to the log, and
-rem the errors of setupapi.dev.log (ANSI) to COM1.
+rem pnputil writes to the console only: the errors of setupapi.dev.log
+rem (ANSI) go to COM1 instead.
 for %%v in (NetKVM\netkvm Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic vioscsi\vioscsi) do (
   pnputil -i -a "%SRC%\drivers\%%v.inf" >nul 2>&1
-  call :log "pnputil %%v: exit code %%errorlevel%%"
+  call :log "pnputil %%v"
 )
-findstr /i /c:"!!!" /c:"failed" %windir%\inf\setupapi.dev.log > COM1 2>&1
+findstr /c:"!!!" %windir%\inf\setupapi.dev.log > COM1 2>&1
 call :log "Windows Server 2008 SP2 (KB948465), the longest step"
 "%SRC%\updates\sp2.exe" /quiet /norestart
 set RC=%errorlevel%
