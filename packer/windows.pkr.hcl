@@ -50,6 +50,14 @@ locals {
   })
 
   serial_args = var.serial_log != "" ? [["-serial", "file:${var.serial_log}"]] : []
+
+  # Packer keeps its own QMP connection open for the whole build, and a QMP
+  # socket serves one client at a time. The CI screenshots therefore go
+  # through a second, dedicated monitor.
+  qmp_args = var.qmp_socket != "" ? [
+    ["-chardev", "socket,id=oicshot,path=${var.qmp_socket},server=on,wait=off"],
+    ["-mon", "chardev=oicshot,mode=control"],
+  ] : []
 }
 
 source "qemu" "windows" {
@@ -65,10 +73,6 @@ source "qemu" "windows" {
   cpus        = var.cpus
   memory      = var.memory
   headless    = var.headless
-
-  # Optional QMP socket, used by the CI to take screenshots of the console.
-  qmp_enable      = var.qmp_socket != ""
-  qmp_socket_path = var.qmp_socket != "" ? var.qmp_socket : null
 
   # BIOS only: Windows Server 2008 does not boot under OVMF (UEFI).
   machine_type = "pc"
@@ -91,7 +95,7 @@ source "qemu" "windows" {
   }
 
   boot_wait = "5s"
-  qemuargs  = local.serial_args
+  qemuargs  = concat(local.serial_args, local.qmp_args)
 
   # No connection to the guest: the build ends when the VM powers itself off
   # after sysprep. SP2 and the January 2020 rollup take most of the time.

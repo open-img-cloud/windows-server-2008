@@ -84,7 +84,7 @@ jobs:
           PACKER_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$WORK/screens"
-          python3 -I scripts/ci/screenshots.py "$WORK/qmp.sock" "$WORK/screens" 300 &
+          python3 -I scripts/ci/screenshots.py "$WORK/qmp.sock" "$WORK/screens" 120 &
           scripts/build.sh --iso "$WORK"/iso/*.iso --deps "$WORK/deps" --edition "$EDITION" -- \
             -var "output_dir=$WORK/output" -var "qmp_socket=$WORK/qmp.sock" \
             -var "serial_log=$WORK/serial.log"
