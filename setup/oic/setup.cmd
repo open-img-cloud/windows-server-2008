@@ -11,6 +11,7 @@ set SRC=
 for %%d in (D E F G H) do if exist %%d:\oic\setup.cmd set SRC=%%d:
 set /p STAGE=<C:\oic\stage.txt
 call :log "boot, stage %STAGE%, setup CD %SRC%"
+if "%STAGE%"=="2" if exist C:\oic\pnputil.log type C:\oic\pnputil.log > COM1
 for /f "tokens=3*" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CSDVersion 2^>nul ^| find "CSDVersion"') do call :log "service pack: %%a %%b"
 if "%SRC%"=="" call :fail "OIC_SETUP CD not found" & goto :eof
 rem Let the services (Windows Modules Installer, ...) settle after boot.

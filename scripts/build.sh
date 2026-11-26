@@ -98,7 +98,9 @@ for drv in viostor vioscsi NetKVM Balloon vioserial viorng pvpanic; do
   chmod -R u+w "$setup/drivers/$drv"
   rm -f "$setup/drivers/$drv"/*.pdb
 done
-xorriso -osirrox on -indev "$virtio" -extract /guest-agent/qemu-ga-x86_64.msi "$setup/msi/qemu-ga-x86_64.msi" 2>/dev/null
+# QEMU guest agent 101.2.0 (2019): the agent of virtio-win 0.1.221 imports
+# TryAcquireSRWLockExclusive (Windows 7 and later) and does not start on 2008.
+cp "$(pick 'qemu-ga-x86_64-101.2.0-1.el7ev.msi')" "$setup/msi/qemu-ga-x86_64.msi"
 chmod -R u+w "$setup"
 [ -f "$setup/drivers/viostor/viostor.inf" ] || { echo "no 2k8 viostor driver in $virtio" >&2; exit 1; }
 

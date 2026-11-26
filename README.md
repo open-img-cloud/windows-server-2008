@@ -97,7 +97,8 @@ Linux x86_64 with KVM (`/dev/kvm` writable), `qemu-system-x86_64`,
   | Package | Source |
   |---|---|
   | SP2 (KB948465) and the five updates (`windows6.0-kb*.exe/.msu`) | [Microsoft Update Catalog][catalog] (the SHA-1 is part of each file name) |
-  | `virtio-win-0.1.221.iso` | [virtio-win archive][virtio]: the last release whose QEMU guest agent runs on 2008; its `2k8` drivers are used |
+  | `virtio-win-0.1.221.iso` | [virtio-win archive][virtio]: its `2k8` drivers are used |
+  | `qemu-ga-x86_64-101.2.0-1.el7ev.msi` | [QEMU guest agent archive][qga] (`qemu-ga-x86_64.msi` of 101.2.0, renamed): later agents import `TryAcquireSRWLockExclusive`, which Windows Server 2008 lacks. The MSI is not signed, the pinned sha256 is the check |
   | `CloudbaseInitSetup_0_9_11_x64.msi` | [Cloudbase-Init 0.9.11][cbi]: the last release whose embedded Python (3.4) runs on 2008 |
 
 ## Build
@@ -208,5 +209,6 @@ VirtIO drivers and Cloudbase-Init keep their own licenses.
 [ms-useterms]: https://www.microsoft.com/en-us/useterms
 [catalog]: https://www.catalog.update.microsoft.com/
 [virtio]: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/
+[qga]: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/qemu-ga-win-101.2.0-1.el7ev/
 [cbi]: https://github.com/cloudbase/cloudbase-init/releases/tag/0.9.11
 [packer]: https://developer.hashicorp.com/packer
