@@ -26,7 +26,7 @@ One compressed, sysprepped `qcow2` per build:
   then the January 2020 servicing stack (KB4536953);
 - PowerShell 2.0 and WinRM 2.0 (KB968930);
 - VirtIO drivers for 2008 (storage virtio-blk and virtio-scsi, network,
-  balloon, serial, RNG, pvpanic) and the QEMU guest agent;
+  balloon, serial, RNG, pvpanic) and the QEMU guest agent (without VSS);
 - Cloudbase-Init 0.9.11: hostname, Administrator password, SSH keys and
   user data from the config drive or the metadata service, C: extended to
   the disk size;
@@ -158,6 +158,10 @@ qm template 9008
   network settings from the metadata on Windows; the image relies on DHCP
   (the OpenStack and Proxmox default).
 - **No UEFI**: Windows Server 2008 (non R2) does not boot under OVMF.
+- **No VSS freeze**: the guest agent is installed without its VSS
+  provider, whose registration fails on 2008. `guest-fsfreeze-freeze` is
+  not available, so snapshots of a running instance are crash consistent
+  only.
 - **No updates after January 2020**: Windows Update may no longer offer
   anything for this release.
 

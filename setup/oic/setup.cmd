@@ -62,11 +62,24 @@ goto :eof
 
 :stage7
 call :log "QEMU guest agent"
-msiexec /i "%SRC%\msi\qemu-ga-x86_64.msi" /qn /norestart /l*v C:\oic\qemu-ga.log
+rem The MSI registers the VSS provider (qemu-ga.exe -s vss-install), which
+rem fails on Windows Server 2008 (error 1722). The files come from an
+rem administrative install instead, which runs no custom action, and the
+rem service is created with the arguments of the MSI. No VSS provider:
+rem guest-fsfreeze is not available on this image.
+msiexec /a "%SRC%\msi\qemu-ga-x86_64.msi" /qn TARGETDIR=C:\oic\qga /l*v C:\oic\qemu-ga.log
 set RC=%errorlevel%
-if not "%RC%"=="0" if not "%RC%"=="3010" call :msilog C:\oic\qemu-ga.log
-call :check %RC% "QEMU guest agent" || goto :eof
-sc config QEMU-GA start= auto >nul
+if not "%RC%"=="0" call :msilog C:\oic\qemu-ga.log
+call :check %RC% "QEMU guest agent files" || goto :eof
+set QGA=
+for /f "delims=" %%f in ('dir /s /b C:\oic\qga\qemu-ga.exe') do set QGA=%%~dpf
+if "%QGA%"=="" call :fail "qemu-ga.exe not found in the MSI" & goto :eof
+xcopy /e /i /q /y "%QGA%." "%ProgramFiles%\Qemu-ga" >nul
+call :check %errorlevel% "QEMU guest agent copy" || goto :eof
+del /q "%ProgramFiles%\Qemu-ga\qga-vss.*" >nul 2>&1
+sc create QEMU-GA binPath= "\"%ProgramFiles%\Qemu-ga\qemu-ga.exe\" -d --retry-path" start= auto DisplayName= "QEMU Guest Agent" >nul
+call :check %errorlevel% "QEMU guest agent service" || goto :eof
+sc description QEMU-GA "QEMU Guest Agent" >nul
 
 call :log "Cloudbase-Init 0.9.11"
 msiexec /i "%SRC%\msi\CloudbaseInitSetup_0_9_11_x64.msi" /qn /norestart /l*v C:\oic\cloudbase-init.log RUN_SERVICE_AS_LOCAL_SYSTEM=1
