@@ -98,9 +98,10 @@ for drv in viostor vioscsi NetKVM Balloon vioserial viorng pvpanic; do
   chmod -R u+w "$setup/drivers/$drv"
   rm -f "$setup/drivers/$drv"/*.pdb
 done
-# QEMU guest agent 101.2.0 (2019): the agent of virtio-win 0.1.221 imports
-# TryAcquireSRWLockExclusive (Windows 7 and later) and does not start on 2008.
-cp "$(pick 'qemu-ga-x86_64-101.2.0-1.el7ev.msi')" "$setup/msi/qemu-ga-x86_64.msi"
+# QEMU guest agent 100.0.0: later agents import Windows 7 functions
+# (CM_Get_DevNode_PropertyW from 101, TryAcquireSRWLockExclusive from 102)
+# and do not start on 2008.
+cp "$(pick 'qemu-ga-x64-100.0.0.0-3.el7ev.msi')" "$setup/msi/qemu-ga-x86_64.msi"
 chmod -R u+w "$setup"
 [ -f "$setup/drivers/viostor/viostor.inf" ] || { echo "no 2k8 viostor driver in $virtio" >&2; exit 1; }
 
@@ -113,7 +114,7 @@ openssl pkcs7 -inform DER -in "$setup/drivers/viostor/viostor.cat" -print_certs 
 grep -q 'BEGIN CERTIFICATE' "$setup/oic/redhat.cer" || { echo "no Red Hat certificate in viostor.cat" >&2; exit 1; }
 
 # In-guest scripts; cmd.exe wants CRLF line endings.
-cp -r "$repo_root/setup/oic/." "$setup/oic/"
+cp -R "$repo_root/setup/oic/." "$setup/oic/"
 for f in "$setup"/oic/*.cmd "$setup"/oic/*.conf "$setup"/oic/*.xml; do sed -i 's/\r\{0,1\}$/\r/' "$f"; done
 
 # Build only Administrator password: random, never stored in the repository.

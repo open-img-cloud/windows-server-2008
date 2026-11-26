@@ -11,7 +11,6 @@ set SRC=
 for %%d in (D E F G H) do if exist %%d:\oic\setup.cmd set SRC=%%d:
 set /p STAGE=<C:\oic\stage.txt
 call :log "boot, stage %STAGE%, setup CD %SRC%"
-if "%STAGE%"=="2" if exist C:\oic\pnputil.log type C:\oic\pnputil.log > COM1
 for /f "tokens=3*" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CSDVersion 2^>nul ^| find "CSDVersion"') do call :log "service pack: %%a %%b"
 if "%SRC%"=="" call :fail "OIC_SETUP CD not found" & goto :eof
 rem Let the services (Windows Modules Installer, ...) settle after boot.
@@ -24,10 +23,13 @@ rem pvpanic): the publisher is trusted first so that no prompt appears.
 call :log "VirtIO drivers"
 certutil -addstore -f TrustedPublisher C:\oic\redhat.cer >nul
 call :check %errorlevel% "Red Hat certificate" || goto :eof
+rem pnputil writes to the console only: its exit code goes to the log, and
+rem the errors of setupapi.dev.log (ANSI) to COM1.
 for %%v in (NetKVM\netkvm Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic vioscsi\vioscsi) do (
-  pnputil -i -a "%SRC%\drivers\%%v.inf" >>C:\oic\pnputil.log 2>&1
-  call :log "pnputil %%v"
+  pnputil -i -a "%SRC%\drivers\%%v.inf" >nul 2>&1
+  call :log "pnputil %%v: exit code %%errorlevel%%"
 )
+findstr /i /c:"!!!" /c:"failed" %windir%\inf\setupapi.dev.log > COM1 2>&1
 call :log "Windows Server 2008 SP2 (KB948465), the longest step"
 "%SRC%\updates\sp2.exe" /quiet /norestart
 set RC=%errorlevel%
