@@ -145,7 +145,7 @@ def decode(field):
     return raw.decode(enc, errors="replace").replace("\ufeff", "").strip()
 
 
-def run(path, *args):
+def run(path, *args, wait=120):
     """Runs a program in the guest, returns its stdout or None (exit code and
     stderr in last). Arguments go one by one: the guest agent quotes them, so
     a command line passed through cmd.exe /c would reach PowerShell as a
@@ -154,7 +154,7 @@ def run(path, *args):
     r = call("guest-exec", {"path": path, "arg": list(args), "capture-output": True})
     if not r:
         return None
-    for _ in range(60):
+    for _ in range(wait // 2):
         st = call("guest-exec-status", {"pid": r["pid"]})
         if st and st.get("exited"):
             last.update(exitcode=st.get("exitcode"), err=decode(st.get("err-data"))[-600:])
@@ -206,27 +206,31 @@ print(f"ok: password of {len(password)} characters posted and decrypted")
 
 
 def logon(candidate):
-    """Exit code and stderr of registering a task that runs as Administrator
-    with this password: the Task Scheduler checks the credentials (logon) at
-    registration. PowerShell 2.0 cannot do it here (run by the agent, without
-    a console, it stops with a FailFast, 0x80131623), and net use from SYSTEM
-    fails with 1312. The password is alphanumeric (Cloudbase-Init), no
-    quoting issue."""
-    out = run("schtasks.exe", "/create", "/tn", "oic-logon-check", "/tr", r"C:\Windows\System32\whoami.exe",
-        "/sc", "onstart", "/ru", "Administrator", "/rp", candidate, "/f")
+    """Registers a task that runs as Administrator with this password: the
+    Task Scheduler checks the credentials and registers nothing if they are
+    wrong. Returns (registered, output of schtasks /create). PowerShell 2.0
+    cannot do it here (run by the agent, without a console, it stops with a
+    FailFast, 0x80131623), and net use from SYSTEM fails with 1312. The
+    password is alphanumeric (Cloudbase-Init), no quoting issue."""
+    task = "oic-logon-check"
+    run("schtasks.exe", "/delete", "/tn", task, "/f")
+    out = run("schtasks.exe", "/create", "/tn", task, "/tr", r"C:\Windows\System32\whoami.exe",
+              "/sc", "onstart", "/ru", "Administrator", "/rp", candidate, "/f", wait=300)
     # schtasks writes its errors to stdout or stderr depending on the case.
-    result = (last.get("exitcode"), ((out or "") + " " + last.get("err", "")).strip())
-    if result[0] == 0:
-        run("schtasks.exe", "/delete", "/tn", "oic-logon-check", "/f")
-    return result
+    created = f"{last.get('exitcode')} {out or ''} {last.get('err', '')}".strip()
+    run("schtasks.exe", "/query", "/tn", task)
+    registered = last.get("exitcode") == 0
+    if registered:
+        run("schtasks.exe", "/delete", "/tn", task, "/f")
+    return registered, created
 
 
-code, err = logon(password + "x")
-if code == 0 or "password" not in err.lower():
-    sys.exit(f"FAIL: a wrong password was not refused as such ({code}, {err!r})")
-code, err = logon(password)
-if code != 0:
-    sys.exit(f"FAIL: the posted password does not open a session ({code}, {err!r})")
+registered, created = logon(password + "x")
+if registered or "password" not in created.lower():
+    sys.exit(f"FAIL: a wrong password was not refused as such ({created!r})")
+registered, created = logon(password)
+if not registered:
+    sys.exit(f"FAIL: the posted password does not open a session ({created!r})")
 print("ok: the posted password opens an Administrator session, a wrong one is refused")
 
 step = "C: extended to the disk"
