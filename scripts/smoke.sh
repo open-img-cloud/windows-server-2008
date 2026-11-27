@@ -135,20 +135,30 @@ def call(cmd, args=None, wait=10):
             s.close()
 
 
+last = {}
+
+
+def decode(field):
+    raw = base64.b64decode(field or "")
+    # wmic writes UTF-16 when its output is not a console.
+    enc = "utf-16" if b"\x00" in raw else "utf-8"
+    return raw.decode(enc, errors="replace").replace("\ufeff", "").strip()
+
+
 def run(path, *args):
-    """Runs a program in the guest, returns its stdout or None. Arguments go
-    one by one: the guest agent quotes them, so a command line passed through
-    cmd.exe /c would reach PowerShell as a quoted string, not as code."""
+    """Runs a program in the guest, returns its stdout or None (exit code and
+    stderr in last). Arguments go one by one: the guest agent quotes them, so
+    a command line passed through cmd.exe /c would reach PowerShell as a
+    quoted string, not as code."""
+    last.clear()
     r = call("guest-exec", {"path": path, "arg": list(args), "capture-output": True})
     if not r:
         return None
     for _ in range(60):
         st = call("guest-exec-status", {"pid": r["pid"]})
         if st and st.get("exited"):
-            raw = base64.b64decode(st.get("out-data", ""))
-            # wmic writes UTF-16 when its output is not a console.
-            enc = "utf-16" if b"\x00" in raw else "utf-8"
-            return raw.decode(enc, errors="replace").replace("\ufeff", "").strip()
+            last.update(exitcode=st.get("exitcode"), err=decode(st.get("err-data"))[-600:])
+            return decode(st.get("out-data"))
         time.sleep(2)
     return None
 
@@ -210,15 +220,16 @@ def logon(candidate):
     ) % secret
     encoded = base64.b64encode(script.encode("utf-16-le")).decode()
     return run(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-               "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded)
+               "-NoProfile", "-NonInteractive", "-InputFormat", "None",
+               "-EncodedCommand", encoded)
 
 
 out = logon(password)
 if out != "logon-ok":
-    sys.exit(f"FAIL: the posted password does not open a session ({out!r})")
+    sys.exit(f"FAIL: the posted password does not open a session ({out!r}, {last})")
 out = logon(password + "x")
 if not (out or "").startswith("logon-failed"):
-    sys.exit(f"FAIL: a wrong password was not refused ({out!r})")
+    sys.exit(f"FAIL: a wrong password was not refused ({out!r}, {last})")
 print("ok: the posted password opens an Administrator session, a wrong one is refused")
 
 step = "C: extended to the disk"
