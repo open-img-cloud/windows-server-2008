@@ -41,6 +41,12 @@ for %%v in (Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic viosc
   call :log "pnputil %%v"
 )
 findstr /c:"!!!" %windir%\inf\setupapi.dev.log > COM1 2>&1
+rem A driver bound to a device can leave a reboot pending, and SP2 then
+rem refuses to start (exit code 3017).
+call :next 1b
+goto :eof
+
+:stage1b
 call :log "Windows Server 2008 SP2 (KB948465), the longest step"
 "%SRC%\updates\sp2.exe" /quiet /norestart
 set RC=%errorlevel%
