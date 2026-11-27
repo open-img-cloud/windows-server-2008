@@ -40,6 +40,8 @@ jobs:
       - name: packer validate (every edition)
         working-directory: packer
         run: |
+          # floppy_dirs must exist (build.sh fills it with the viostor driver).
+          mkdir -p /tmp/drivers/viostor
           for edition in standard enterprise datacenter standard-core enterprise-core datacenter-core; do
             echo "== $edition"
             packer validate -var iso_path=/dev/null -var setup_dir=/tmp -var build_password=ci-only \
