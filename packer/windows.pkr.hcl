@@ -112,7 +112,7 @@ source "qemu" "windows" {
   floppy_dirs = ["${abspath(var.setup_dir)}/drivers/viostor"]
 
   boot_wait = "5s"
-  qemuargs  = concat(local.serial_args, local.qmp_args)
+  qemuargs  = concat(local.serial_args, local.qmp_args, [["-readconfig", "${path.root}/virtio-serial.cfg"]])
 
   # No connection to the guest: the build ends when the VM powers itself off
   # after sysprep. SP2 and the January 2020 rollup take most of the time.

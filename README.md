@@ -201,6 +201,7 @@ packer/
   windows.pkr.hcl            source and build (communicator none)
   variables.pkr.hcl          inputs, documented
   autounattend.xml.pkrtpl    Windows Setup answer file (Vista schema)
+  virtio-serial.cfg          guest agent channel of the build VM (-readconfig)
 setup/oic/
   start.cmd                  first logon: registers the setup task
   setup.cmd                  in-guest build, one stage per boot

@@ -102,6 +102,12 @@ rem Diagnostics in the CI log: agent version, service state once started,
 rem VirtIO serial driver (the agent channel).
 "%ProgramFiles%\Qemu-ga\qemu-ga.exe" -V > COM1 2>&1
 call :log "qemu-ga -V exit code %errorlevel%"
+rem One verbose run in the foreground first: its log says whether the agent
+rem opens the VirtIO serial channel (a device of the build VM too).
+start "" /b "%ProgramFiles%\Qemu-ga\qemu-ga.exe" -v -l C:\oic\qga-test.log
+ping -n 16 127.0.0.1 >nul
+taskkill /f /im qemu-ga.exe >nul 2>&1
+if exist C:\oic\qga-test.log type C:\oic\qga-test.log > COM1
 sc start QEMU-GA >nul 2>&1
 ping -n 11 127.0.0.1 >nul
 sc query QEMU-GA > COM1 2>&1
