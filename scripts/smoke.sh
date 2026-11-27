@@ -206,23 +206,27 @@ print(f"ok: password of {len(password)} characters posted and decrypted")
 
 
 def logon(candidate):
-    """Network logon of Administrator in the guest (net use on IPC$ of the
-    guest itself); True if accepted. PowerShell 2.0 cannot do it here: run
-    by the agent, without a console, it stops with a FailFast (0x80131623).
-    The password is alphanumeric (Cloudbase-Init), no quoting issue."""
-    run("net.exe", "use", r"\\127.0.0.1\IPC$", candidate, "/user:Administrator")
-    accepted = last.get("exitcode") == 0
-    if accepted:
-        run("net.exe", "use", r"\\127.0.0.1\IPC$", "/delete", "/y")
-    return accepted
+    """Exit code and stderr of registering a task that runs as Administrator
+    with this password: the Task Scheduler checks the credentials (logon) at
+    registration. PowerShell 2.0 cannot do it here (run by the agent, without
+    a console, it stops with a FailFast, 0x80131623), and net use from SYSTEM
+    fails with 1312. The password is alphanumeric (Cloudbase-Init), no
+    quoting issue."""
+    out = run("schtasks.exe", "/create", "/tn", "oic-logon-check", "/tr", r"C:\Windows\System32\whoami.exe",
+        "/sc", "onstart", "/ru", "Administrator", "/rp", candidate, "/f")
+    # schtasks writes its errors to stdout or stderr depending on the case.
+    result = (last.get("exitcode"), ((out or "") + " " + last.get("err", "")).strip())
+    if result[0] == 0:
+        run("schtasks.exe", "/delete", "/tn", "oic-logon-check", "/f")
+    return result
 
 
-# The wrong password first: an open connection would make the second net use
-# fail with another error (1219).
-if logon(password + "x"):
-    sys.exit("FAIL: a wrong password was accepted")
-if not logon(password):
-    sys.exit(f"FAIL: the posted password does not open a session ({last})")
+code, err = logon(password + "x")
+if code == 0 or "password" not in err.lower():
+    sys.exit(f"FAIL: a wrong password was not refused as such ({code}, {err!r})")
+code, err = logon(password)
+if code != 0:
+    sys.exit(f"FAIL: the posted password does not open a session ({code}, {err!r})")
 print("ok: the posted password opens an Administrator session, a wrong one is refused")
 
 step = "C: extended to the disk"
