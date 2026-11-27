@@ -206,30 +206,23 @@ print(f"ok: password of {len(password)} characters posted and decrypted")
 
 
 def logon(candidate):
-    """LogonUser (interactive) for Administrator in the guest, from
-    PowerShell (-EncodedCommand: no quoting through the agent)."""
-    secret = base64.b64encode(candidate.encode()).decode()
-    script = (
-        "$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('%s'));"
-        "Add-Type -Namespace OIC -Name L -MemberDefinition '"
-        "[DllImport(\"advapi32.dll\", SetLastError=true)] public static extern bool "
-        "LogonUser(string u, string d, string p, int t, int v, out IntPtr h);';"
-        "$h=[IntPtr]::Zero;"
-        "if ([OIC.L]::LogonUser('Administrator', '.', $p, 2, 0, [ref]$h)) {'logon-ok'} "
-        "else {'logon-failed ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error()}"
-    ) % secret
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode()
-    return run(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-               "-NoProfile", "-NonInteractive", "-InputFormat", "None",
-               "-EncodedCommand", encoded)
+    """Network logon of Administrator in the guest (net use on IPC$ of the
+    guest itself); True if accepted. PowerShell 2.0 cannot do it here: run
+    by the agent, without a console, it stops with a FailFast (0x80131623).
+    The password is alphanumeric (Cloudbase-Init), no quoting issue."""
+    run("net.exe", "use", r"\\127.0.0.1\IPC$", candidate, "/user:Administrator")
+    accepted = last.get("exitcode") == 0
+    if accepted:
+        run("net.exe", "use", r"\\127.0.0.1\IPC$", "/delete", "/y")
+    return accepted
 
 
-out = logon(password)
-if out != "logon-ok":
-    sys.exit(f"FAIL: the posted password does not open a session ({out!r}, {last})")
-out = logon(password + "x")
-if not (out or "").startswith("logon-failed"):
-    sys.exit(f"FAIL: a wrong password was not refused ({out!r}, {last})")
+# The wrong password first: an open connection would make the second net use
+# fail with another error (1219).
+if logon(password + "x"):
+    sys.exit("FAIL: a wrong password was accepted")
+if not logon(password):
+    sys.exit(f"FAIL: the posted password does not open a session ({last})")
 print("ok: the posted password opens an Administrator session, a wrong one is refused")
 
 step = "C: extended to the disk"
