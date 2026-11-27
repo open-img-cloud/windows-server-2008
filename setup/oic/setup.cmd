@@ -18,8 +18,11 @@ ping -n 31 127.0.0.1 >nul
 goto stage%STAGE%
 
 :stage1
-rem VirtIO drivers other than storage (network, balloon, serial, RNG,
-rem pvpanic): the publisher is trusted first so that no prompt appears.
+rem VirtIO drivers other than storage and network (balloon, serial, RNG,
+rem pvpanic, SCSI): the publisher is trusted first so that no prompt appears.
+rem The network driver waits for stage 7: with a working network, Windows
+rem Update and the time service run during the offline installs below, and
+rem wusa never returned.
 call :log "VirtIO drivers"
 rem The drivers chain to VeriSign Class 3 Public Primary CA - G5, which a
 rem Windows Server 2008 without Internet access does not have (the root
@@ -33,7 +36,7 @@ certutil -addstore -f TrustedPublisher C:\oic\redhat.cer >nul
 call :check %errorlevel% "Red Hat certificate" || goto :eof
 rem pnputil writes to the console only: the errors of setupapi.dev.log
 rem (ANSI) go to COM1 instead.
-for %%v in (NetKVM\netkvm Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic vioscsi\vioscsi) do (
+for %%v in (Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic vioscsi\vioscsi) do (
   pnputil -i -a "%SRC%\drivers\%%v.inf" >nul 2>&1
   call :log "pnputil %%v"
 )
@@ -72,6 +75,10 @@ call :next 7
 goto :eof
 
 :stage7
+call :log "VirtIO network driver"
+pnputil -i -a "%SRC%\drivers\NetKVM\netkvm.inf" >nul 2>&1
+findstr /c:"!!!" %windir%\inf\setupapi.dev.log | findstr /i "netkvm" > COM1 2>&1
+
 call :log "QEMU guest agent"
 rem The MSI registers the VSS provider (qemu-ga.exe -s vss-install), which
 rem fails on Windows Server 2008 (error 1722). The files come from an
