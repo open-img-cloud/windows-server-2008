@@ -128,8 +128,11 @@ scripts/build.sh --iso ~/iso/ws2008.iso --deps ~/iso/deps-2008 --edition datacen
 scripts/build.sh --iso ~/iso/ws2008.iso --deps ~/iso/deps-2008 --prepare-only
 ```
 
-Boot test of the result (guest agent, hostname from a config drive, C:
-extended to a 60 GB disk):
+Boot test of the result: guest agent, hostname and password through an
+OpenStack metadata server (`scripts/metadata-server.py`, reached by an
+iptables redirect, so sudo is needed), the posted password decrypted with
+the instance key and checked by a logon in the guest, C: extended to a
+60 GB disk:
 
 ```sh
 scripts/smoke.sh output/windows-server-2008-standard-bios/windows-server-2008-standard-bios.qcow2
@@ -148,8 +151,11 @@ openstack image create "Windows Server 2008 SP2 Standard" \
 ```
 
 The flavor disk must be at least 40 GB. Get the Administrator password with
-`nova get-password <server> <private key>`, or pass one with the
-`admin_pass` metadata.
+`nova get-password <server> <private key>` (the key pair must be RSA), or
+pass one with the `admin_pass` metadata. Cloudbase-Init reads the metadata
+API before a config drive: only that API can receive the generated
+password. Without a metadata API, the first boot waits about a minute and a
+half before it reads the config drive.
 
 ## Import into Proxmox VE
 
