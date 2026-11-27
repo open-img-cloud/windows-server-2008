@@ -94,15 +94,28 @@ cp "$(pick 'CloudbaseInitSetup_0_9_11_x64.msi')" "$setup/msi/"
 virtio="$(pick 'virtio-win-*.iso')"
 for drv in viostor vioscsi NetKVM Balloon vioserial viorng pvpanic; do
   xorriso -osirrox on -indev "$virtio" -extract "/$drv/2k8/amd64" "$setup/drivers/$drv" 2>/dev/null
+  # xorriso keeps the read-only modes of the ISO: make the copy writable.
+  chmod -R u+w "$setup/drivers/$drv"
   rm -f "$setup/drivers/$drv"/*.pdb
 done
-xorriso -osirrox on -indev "$virtio" -extract /guest-agent/qemu-ga-x86_64.msi "$setup/msi/qemu-ga-x86_64.msi" 2>/dev/null
+# QEMU guest agent 100.0.0: later agents import Windows 7 functions
+# (CM_Get_DevNode_PropertyW from 101, TryAcquireSRWLockExclusive from 102)
+# and do not start on 2008.
+cp "$(pick 'qemu-ga-x64-100.0.0.0-3.el7ev.msi')" "$setup/msi/qemu-ga-x86_64.msi"
 chmod -R u+w "$setup"
 [ -f "$setup/drivers/viostor/viostor.inf" ] || { echo "no 2k8 viostor driver in $virtio" >&2; exit 1; }
 
+# Red Hat signing certificate of the drivers: trusted in the guest before
+# pnputil runs, otherwise Windows asks whether to trust the publisher and
+# the setup task, which has no console, waits forever.
+mkdir -p "$setup/oic"
+openssl pkcs7 -inform DER -in "$setup/drivers/viostor/viostor.cat" -print_certs |
+  awk '/^subject=.*Red Hat/{p=1} p{print} p&&/END CERTIFICATE/{exit}' > "$setup/oic/redhat.cer"
+grep -q 'BEGIN CERTIFICATE' "$setup/oic/redhat.cer" || { echo "no Red Hat certificate in viostor.cat" >&2; exit 1; }
+
 # In-guest scripts; cmd.exe wants CRLF line endings.
-cp -r "$repo_root/setup/oic" "$setup/oic"
-for f in "$setup"/oic/*; do sed -i 's/\r\{0,1\}$/\r/' "$f"; done
+cp -R "$repo_root/setup/oic/." "$setup/oic/"
+for f in "$setup"/oic/*.cmd "$setup"/oic/*.conf "$setup"/oic/*.xml; do sed -i 's/\r\{0,1\}$/\r/' "$f"; done
 
 # Build only Administrator password: random, never stored in the repository.
 # It is replaced at first boot by Cloudbase-Init (SetUserPasswordPlugin).

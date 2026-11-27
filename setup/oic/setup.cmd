@@ -11,15 +11,47 @@ set SRC=
 for %%d in (D E F G H) do if exist %%d:\oic\setup.cmd set SRC=%%d:
 set /p STAGE=<C:\oic\stage.txt
 call :log "boot, stage %STAGE%, setup CD %SRC%"
+for /f "tokens=3*" %%a in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion" /v CSDVersion 2^>nul ^| find "CSDVersion"') do call :log "service pack: %%a %%b"
 if "%SRC%"=="" call :fail "OIC_SETUP CD not found" & goto :eof
 rem Let the services (Windows Modules Installer, ...) settle after boot.
 ping -n 31 127.0.0.1 >nul
 goto stage%STAGE%
 
 :stage1
+rem VirtIO drivers other than storage and network (balloon, serial, RNG,
+rem pvpanic, SCSI): the publisher is trusted first so that no prompt appears.
+rem The network driver waits for stage 7: with a working network, Windows
+rem Update and the time service run during the offline installs below, and
+rem wusa never returned.
+call :log "VirtIO drivers"
+rem The drivers chain to VeriSign Class 3 Public Primary CA - G5, which a
+rem Windows Server 2008 without Internet access does not have (the root
+rem update would download it): without it the packages are seen as unsigned
+rem (0x800b010a). Same for the Thawte root of their timestamps.
+certutil -addstore -f Root C:\oic\verisign-g5-root.cer >nul
+call :check %errorlevel% "VeriSign G5 root" || goto :eof
+certutil -addstore -f Root C:\oic\thawte-timestamping-root.cer >nul
+call :check %errorlevel% "Thawte timestamping root" || goto :eof
+certutil -addstore -f TrustedPublisher C:\oic\redhat.cer >nul
+call :check %errorlevel% "Red Hat certificate" || goto :eof
+rem pnputil writes to the console only: the errors of setupapi.dev.log
+rem (ANSI) go to COM1 instead.
+for %%v in (Balloon\balloon vioserial\vioser viorng\viorng pvpanic\pvpanic vioscsi\vioscsi) do (
+  pnputil -i -a "%SRC%\drivers\%%v.inf" >nul 2>&1
+  call :log "pnputil %%v"
+)
+findstr /c:"!!!" %windir%\inf\setupapi.dev.log > COM1 2>&1
+rem A driver bound to a device can leave a reboot pending, and SP2 then
+rem refuses to start (exit code 3017).
+call :next 1b
+goto :eof
+
+:stage1b
 call :log "Windows Server 2008 SP2 (KB948465), the longest step"
 "%SRC%\updates\sp2.exe" /quiet /norestart
-call :check %errorlevel% "SP2" || goto :eof
+set RC=%errorlevel%
+call :log "SP2: exit code %RC%"
+call :check %RC% "SP2" || goto :eof
 call :next 2
 goto :eof
 
@@ -49,14 +81,43 @@ call :next 7
 goto :eof
 
 :stage7
+call :log "VirtIO network driver"
+pnputil -i -a "%SRC%\drivers\NetKVM\netkvm.inf" >nul 2>&1
+findstr /c:"!!!" %windir%\inf\setupapi.dev.log | findstr /i "netkvm" > COM1 2>&1
+
 call :log "QEMU guest agent"
-msiexec /i "%SRC%\msi\qemu-ga-x86_64.msi" /qn /norestart /l*v C:\oic\qemu-ga.log
-call :check %errorlevel% "QEMU guest agent" || goto :eof
-sc config QEMU-GA start= auto >nul
+rem The MSI registers the VSS provider (qemu-ga.exe -s vss-install), which
+rem fails on Windows Server 2008 (error 1722). The files come from an
+rem administrative install instead, which runs no custom action, and the
+rem service is created with the arguments of the MSI. No VSS provider:
+rem guest-fsfreeze is not available on this image.
+msiexec /a "%SRC%\msi\qemu-ga-x86_64.msi" /qn TARGETDIR=C:\oic\qga /l*v C:\oic\qemu-ga.log
+set RC=%errorlevel%
+if not "%RC%"=="0" call :msilog C:\oic\qemu-ga.log
+call :check %RC% "QEMU guest agent files" || goto :eof
+set QGA=
+for /f "delims=" %%f in ('dir /s /b C:\oic\qga\qemu-ga.exe') do set QGA=%%~dpf
+if "%QGA%"=="" call :fail "qemu-ga.exe not found in the MSI" & goto :eof
+xcopy /e /i /q /y "%QGA%." "%ProgramFiles%\Qemu-ga" >nul
+call :check %errorlevel% "QEMU guest agent copy" || goto :eof
+del /q "%ProgramFiles%\Qemu-ga\qga-vss.*" >nul 2>&1
+sc create QEMU-GA binPath= "\"%ProgramFiles%\Qemu-ga\qemu-ga.exe\" -d --retry-path" start= auto DisplayName= "QEMU Guest Agent" >nul
+call :check %errorlevel% "QEMU guest agent service" || goto :eof
+sc description QEMU-GA "QEMU Guest Agent" >nul
+rem Diagnostics in the CI log: agent version, service state once started,
+rem VirtIO serial driver (the agent channel).
+"%ProgramFiles%\Qemu-ga\qemu-ga.exe" -V > COM1 2>&1
+call :log "qemu-ga -V exit code %errorlevel%"
+sc start QEMU-GA >nul 2>&1
+ping -n 11 127.0.0.1 >nul
+sc query QEMU-GA > COM1 2>&1
+driverquery | findstr /i "vioser netkvm balloon viostor" > COM1 2>&1
 
 call :log "Cloudbase-Init 0.9.11"
 msiexec /i "%SRC%\msi\CloudbaseInitSetup_0_9_11_x64.msi" /qn /norestart /l*v C:\oic\cloudbase-init.log RUN_SERVICE_AS_LOCAL_SYSTEM=1
-call :check %errorlevel% "Cloudbase-Init" || goto :eof
+set RC=%errorlevel%
+if not "%RC%"=="0" if not "%RC%"=="3010" call :msilog C:\oic\cloudbase-init.log
+call :check %RC% "Cloudbase-Init" || goto :eof
 set CBI=%ProgramFiles%\Cloudbase Solutions\Cloudbase-Init
 copy /y C:\oic\cloudbase-init.conf "%CBI%\conf\cloudbase-init.conf" >nul
 copy /y C:\oic\cloudbase-init-unattend.conf "%CBI%\conf\cloudbase-init-unattend.conf" >nul
@@ -100,7 +161,9 @@ rem ---------------------------------------------------------------------
 rem %1 file name in updates\ (without .msu), %2 description
 call :log "%~2"
 wusa.exe "%SRC%\updates\%~1.msu" /quiet /norestart
-call :check %errorlevel% "%~2"
+set RC=%errorlevel%
+call :log "%~1: wusa exit code %RC%"
+call :check %RC% "%~2"
 exit /b %errorlevel%
 
 :check
@@ -110,6 +173,12 @@ if "%~1"=="3010" exit /b 0
 if "%~1"=="2359302" call :log "%~2 already installed" & exit /b 0
 call :fail "%~2 failed with exit code %~1"
 exit /b 1
+
+:msilog
+rem Error lines of a Windows Installer log (UTF-16: type converts it), raw
+rem to COM1 so that the CI log shows why the package failed.
+type "%~1" | findstr /i /c:"return value 3" /c:"error 1" /c:"error 2" /c:"CustomAction" > COM1
+exit /b 0
 
 :next
 (echo %~1)> C:\oic\stage.txt

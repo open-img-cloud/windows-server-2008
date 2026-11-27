@@ -36,6 +36,18 @@ locals {
   }
   image_index = var.image_index > 0 ? var.image_index : local.edition_index[var.edition]
 
+  # Windows Server 2008 Setup refuses an empty product key on this DVD.
+  # These are the public KMS client setup keys (GVLK) published by Microsoft
+  # (learn.microsoft.com/windows-server/get-started/kms-client-activation-keys):
+  # they install the edition unactivated, activation needs your own KMS host
+  # or your own key (slmgr /ipk). Core editions use the same keys.
+  gvlk = {
+    "standard"   = "TM24T-X9RMF-VWXK6-X8JC9-BFGM2"
+    "enterprise" = "YQGMW-MPWTJ-34KDK-48M3W-X4Q6V"
+    "datacenter" = "7M67G-PC374-GR742-YH8V4-TCBY3"
+  }
+  product_key = local.gvlk[replace(var.edition, "-core", "")]
+
   vm_name    = "windows-server-2008-${var.edition}-bios"
   output_dir = var.output_dir != "" ? var.output_dir : "${path.root}/../output"
 
@@ -44,12 +56,21 @@ locals {
 
   autounattend = templatefile("${path.root}/autounattend.xml.pkrtpl", {
     image_index    = local.image_index
+    product_key    = local.product_key
     admin_password = local.xml_password
     ui_language    = var.ui_language
     time_zone      = var.time_zone
   })
 
   serial_args = var.serial_log != "" ? [["-serial", "file:${var.serial_log}"]] : []
+
+  # Packer keeps its own QMP connection open for the whole build, and a QMP
+  # socket serves one client at a time. The CI screenshots therefore go
+  # through a second, dedicated monitor.
+  qmp_args = var.qmp_socket != "" ? [
+    ["-chardev", "socket,id=oicshot,path=${var.qmp_socket},server=on,wait=off"],
+    ["-mon", "chardev=oicshot,mode=control"],
+  ] : []
 }
 
 source "qemu" "windows" {
@@ -65,10 +86,6 @@ source "qemu" "windows" {
   cpus        = var.cpus
   memory      = var.memory
   headless    = var.headless
-
-  # Optional QMP socket, used by the CI to take screenshots of the console.
-  qmp_enable      = var.qmp_socket != ""
-  qmp_socket_path = var.qmp_socket != "" ? var.qmp_socket : null
 
   # BIOS only: Windows Server 2008 does not boot under OVMF (UEFI).
   machine_type = "pc"
@@ -90,8 +107,12 @@ source "qemu" "windows" {
     "autounattend.xml" = local.autounattend
   }
 
+  # Floppy with the VirtIO storage driver for Windows Setup: A: is the only
+  # drive letter known in advance (see autounattend.xml.pkrtpl).
+  floppy_dirs = ["${abspath(var.setup_dir)}/drivers/viostor"]
+
   boot_wait = "5s"
-  qemuargs  = local.serial_args
+  qemuargs  = concat(local.serial_args, local.qmp_args, [["-readconfig", "${path.root}/virtio-serial.cfg"]])
 
   # No connection to the guest: the build ends when the VM powers itself off
   # after sysprep. SP2 and the January 2020 rollup take most of the time.

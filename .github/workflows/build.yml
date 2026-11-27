@@ -84,7 +84,7 @@ jobs:
           PACKER_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$WORK/screens"
-          python3 -I scripts/ci/screenshots.py "$WORK/qmp.sock" "$WORK/screens" 300 &
+          python3 -I scripts/ci/screenshots.py "$WORK/qmp.sock" "$WORK/screens" 120 &
           scripts/build.sh --iso "$WORK"/iso/*.iso --deps "$WORK/deps" --edition "$EDITION" -- \
             -var "output_dir=$WORK/output" -var "qmp_socket=$WORK/qmp.sock" \
             -var "serial_log=$WORK/serial.log"
@@ -94,7 +94,9 @@ jobs:
         if: always()
         run: |
           [ -f "$WORK/serial.log" ] || { echo "no serial log"; exit 1; }
-          tr -d '\r' < "$WORK/serial.log" | grep 'oic-setup' || true
+          # Everything the guest wrote: oic-setup lines and, after a failed
+          # package, the error lines of its log.
+          tr -d '\r' < "$WORK/serial.log" | grep -a -v '^[[:space:]]*$' || true
           if grep -q 'OIC-SETUP-FAILED' "$WORK/serial.log"; then exit 1; fi
           grep -q 'OIC-SETUP-DONE' "$WORK/serial.log"
 

@@ -26,7 +26,7 @@ One compressed, sysprepped `qcow2` per build:
   then the January 2020 servicing stack (KB4536953);
 - PowerShell 2.0 and WinRM 2.0 (KB968930);
 - VirtIO drivers for 2008 (storage virtio-blk and virtio-scsi, network,
-  balloon, serial, RNG, pvpanic) and the QEMU guest agent;
+  balloon, serial, RNG, pvpanic) and the QEMU guest agent (without VSS);
 - Cloudbase-Init 0.9.11: hostname, Administrator password, SSH keys and
   user data from the config drive or the metadata service, C: extended to
   the disk size;
@@ -38,10 +38,13 @@ One compressed, sysprepped `qcow2` per build:
 
 Licensing is the operator's job; the kit does not change it.
 
-- The Windows Server 2008 DVD used by the CI is the **trial** build
-  (60 days, extendable with `slmgr -rearm`). Its terms do not grant a right
-  to redistribute it ([Microsoft license terms][ms-useterms]). Do not
-  publish images built from it.
+- The Windows Server 2008 DVD used by the CI (build 6001) refuses an
+  empty product key. The kit installs the edition with its public KMS
+  client setup key (GVLK, [published by Microsoft][gvlk]): Windows is
+  installed **unactivated**, with the usual grace period. A GVLK is not a
+  licence. The DVD terms do not grant a right to redistribute it
+  ([Microsoft license terms][ms-useterms]). Do not publish images built
+  from it.
 - With your own licence: enter your product key after the first boot
   (`slmgr -ipk <key>`, then `slmgr -ato`), or point the instance to your KMS
   server.
@@ -94,8 +97,18 @@ Linux x86_64 with KVM (`/dev/kvm` writable), `qemu-system-x86_64`,
   | Package | Source |
   |---|---|
   | SP2 (KB948465) and the five updates (`windows6.0-kb*.exe/.msu`) | [Microsoft Update Catalog][catalog] (the SHA-1 is part of each file name) |
-  | `virtio-win-0.1.221.iso` | [virtio-win archive][virtio]: the last release whose QEMU guest agent runs on 2008; its `2k8` drivers are used |
+  | `virtio-win-0.1.221.iso` | [virtio-win archive][virtio]: its `2k8` drivers are used |
+  | `qemu-ga-x64-100.0.0.0-3.el7ev.msi` | [QEMU guest agent archive][qga] (`qemu-ga-x64.msi` of 100.0.0, renamed): later agents import Windows 7 functions (`CM_Get_DevNode_PropertyW` of cfgmgr32 from 101, `TryAcquireSRWLockExclusive` from 102) that Windows Server 2008 lacks. The MSI is not signed, the pinned sha256 is the check |
   | `CloudbaseInitSetup_0_9_11_x64.msi` | [Cloudbase-Init 0.9.11][cbi]: the last release whose embedded Python (3.4) runs on 2008 |
+
+- **Two root certificates**, in `setup/oic/`, from the Microsoft root
+  distribution (`ctldl.windowsupdate.com/.../trustedr/en/<sha1>.crt`):
+  VeriSign Class 3 Public Primary CA - G5
+  (`4eb6d578499b1ccf5f581ead56be3d9b6744a5e5`) and Thawte Timestamping CA
+  (`be36a4562fb2ee05dbb3d32323adf445084ed656`). The VirtIO drivers chain to
+  them, and a Windows Server 2008 without Internet access does not have them:
+  without them it sees the packages as unsigned (`0x800b010a`). The public
+  key of the G5 root is the one of the cross certificate in the catalogs.
 
 ## Build
 
@@ -155,6 +168,14 @@ qm template 9008
   network settings from the metadata on Windows; the image relies on DHCP
   (the OpenStack and Proxmox default).
 - **No UEFI**: Windows Server 2008 (non R2) does not boot under OVMF.
+- **No VSS freeze**: the guest agent is installed without its VSS
+  provider, whose registration fails on 2008. `guest-fsfreeze-freeze` is
+  not available, so snapshots of a running instance are crash consistent
+  only.
+- **No WinRM listener from Cloudbase-Init**: its WinRM plugins fail on
+  2008 (access denied) and are left out; Remote Desktop is the remote
+  access. Its licensing plugin is left out too: activation is done by the
+  operator (`slmgr /skms <host>` then `slmgr /ato`).
 - **No updates after January 2020**: Windows Update may no longer offer
   anything for this release.
 
@@ -180,11 +201,13 @@ packer/
   windows.pkr.hcl            source and build (communicator none)
   variables.pkr.hcl          inputs, documented
   autounattend.xml.pkrtpl    Windows Setup answer file (Vista schema)
+  virtio-serial.cfg          guest agent channel of the build VM (-readconfig)
 setup/oic/
   start.cmd                  first logon: registers the setup task
   setup.cmd                  in-guest build, one stage per boot
   Unattend.xml               sysprep answer file
   cloudbase-init*.conf       Cloudbase-Init 0.9.11 configuration
+  *-root.cer                 roots of the driver signatures (see below)
 scripts/
   build.sh                   Linux entry point (assembles the setup CD)
   smoke.sh                   boot test of a built image (guest agent)
@@ -197,8 +220,10 @@ iso.sha256, deps.sha256      pinned inputs (sha256 and path in the vault)
 GPL-2.0 for the tooling in this repository. Windows, the updates, the
 VirtIO drivers and Cloudbase-Init keep their own licenses.
 
+[gvlk]: https://learn.microsoft.com/windows-server/get-started/kms-client-activation-keys#windows-server-2008
 [ms-useterms]: https://www.microsoft.com/en-us/useterms
 [catalog]: https://www.catalog.update.microsoft.com/
 [virtio]: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/
+[qga]: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-qemu-ga/qemu-ga-win-100.0.0.0-3.el7ev/
 [cbi]: https://github.com/cloudbase/cloudbase-init/releases/tag/0.9.11
 [packer]: https://developer.hashicorp.com/packer
